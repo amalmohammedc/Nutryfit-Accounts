@@ -10,525 +10,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Firebase JS SDK -->
-    <script type="module">
-        // Import Firebase services
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-            onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            getDocs, 
-            addDoc, 
-            setDoc, 
-            updateDoc, 
-            deleteDoc, 
-            onSnapshot, 
-            collection, 
-            query, 
-            where, 
-            limit,
-            orderBy,
-            serverTimestamp,
-            setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    <!-- SCRIPT MOVED FROM HERE -->
 
-        // --- Firebase Configuration ---
-        let db, auth, userId, transactionsCollectionRef;
-        let unsubscribeTransactions = null;
-        
-        // --- VERCEL DEPLOYMENT FIX ---
-        // You MUST replace this placeholder with your actual Firebase config
-        // object to connect to the database on Vercel.
-        // 1. Go to your Firebase project settings.
-        // 2. Find the "SDK setup and configuration" section.
-        // 3. Copy the config object (it looks like { apiKey: "...", ... }).
-        // 4. Paste it here, replacing the comments below.
-       const firebaseConfig = {
-  apiKey: "AIzaSyBFwDBqw_h3v2lTvx6vsTExhQU7gRQTUFM",
-  authDomain: "nutryfit-accounts.firebaseapp.com",
-  projectId: "nutryfit-accounts",
-  storageBucket: "nutryfit-accounts.firebasestorage.app",
-  messagingSenderId: "277363176555",
-  appId: "1:277363176555:web:1fdb42d4320fc154e4ad2e",
-  measurementId: "G-3YPPMSETFT"
-};
-        
-        // This creates a unique database path for your Vercel app,
-        // separating it from your test data.
-        const appId = 'nutryfit-production'; 
-        
-        // This will be null on Vercel, and the app will correctly sign in anonymously.
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        // --- Opening Balance Data from PDF ---
-        // We will add these two entries if the database is empty
-        // to set the correct starting balance.
-        const openingBalanceData = [
-            { date: "2025-09-18", time: "00:00", description: "Total Previous Income (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "income", amount: 218900 },
-            { date: "2025-09-18", time: "00:01", description: "Total Previous Expense (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "expense", amount: 200900 }
-        ];
-
-        // --- DOM Elements ---
-        let loadingSpinner, appContent, userIdDisplay;
-        let totalIncomeEl, totalExpenseEl, balanceEl;
-        let transactionList;
-        let deleteModal, confirmDeleteBtn, cancelDeleteBtn, deleteMessage;
-        let docToDeleteId = null;
-
-        // Modal Elements
-        let transactionModal, modalTitle, modalForm, modalCancelBtn, modalSaveBtn, modalTypeToggleIncome, modalTypeToggleExpense, modalFormTypeInput;
-        
-        // Password Modal Elements
-        let passwordModal, passwordForm, passwordInput, passwordError;
-
-        // --- Utility Functions ---
-        const formatCurrency = (amount) => {
-            return amount.toLocaleString('en-IN', {
-                style: 'currency',
-                currency: 'INR',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).replace('₹', '₹ '); // Add space
-        };
-
-        const formatDate = (dateString, timeString) => {
-            try {
-                const date = new Date(`${dateString}T${timeString || '00:00:00'}`);
-                // Add time zone offset to prevent date from shifting
-                const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-                const correctedDate = new Date(date.getTime() + userTimezoneOffset);
-                
-                const datePart = correctedDate.toLocaleDateString('en-GB', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric'
-                });
-                const timePart = correctedDate.toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true
-                });
-                // On small screens, don't add the block element
-                return `<span class="whitespace-nowrap">${datePart}</span> <span class="text-xs text-gray-500 block">${timePart}</span>`;
-            } catch (e) {
-                console.error("Error formatting date:", dateString, e);
-                return dateString;
-            }
-        };
-
-        // --- Firebase Initialization ---
-        async function initFirebase() {
-            try {
-                // --- VERCEL DEPLOYMENT FIX ---
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
-                    console.error("Firebase config is missing or is still the placeholder!");
-                    console.error("Please update the 'firebaseConfig' object in the HTML file with your project's config.");
-                    // Show a user-facing error
-                    loadingSpinner.innerHTML = `<span class="text-xl font-medium text-red-600 text-center p-4">Error: Firebase Configuration is missing.<br>Please update the file.</span>`;
-                    return;
-                }
-                
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                setLogLevel('Debug');
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        console.log("User authenticated. UserID:", userId);
-                        // --- MODIFICATION: Set CEO code to 001 ---
-                        // This will update all elements with id="userIdDisplay"
-                        document.querySelectorAll('#userIdDisplay').forEach(el => {
-                            el.textContent = "001";
-                        });
-
-                        // Define collection reference *after* userId is available
-                        transactionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/nutryfit_transactions`);
-                        
-                        // Load sample data if DB is empty
-                        await loadInitialData();
-                        
-                        // Start listening for real-time updates
-                        listenForTransactions();
-
-                        // Show app content
-                        loadingSpinner.classList.add('hidden');
-                        appContent.classList.remove('hidden');
-
-                    } else {
-                        console.log("No user signed in.");
-                        // Sign in
-                        if (initialAuthToken) {
-                            console.log("Signing in with custom token...");
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            console.log("Signing in anonymously...");
-                            await signInAnonymously(auth);
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error("Error initializing Firebase:", e);
-                loadingSpinner.classList.add('hidden');
-            }
-        }
-
-        // --- Data Loading ---
-        async function loadInitialData() {
-            if (!transactionsCollectionRef) return;
-
-            try {
-                // Check if the collection is empty
-                const q = query(transactionsCollectionRef, limit(1));
-                const snapshot = await getDocs(q);
-                
-                if (snapshot.empty) {
-                    console.log("Database is empty. Loading opening balance data...");
-                    // Use Promise.all to add all documents concurrently
-                    const addPromises = openingBalanceData.map(txn => {
-                        return addDoc(transactionsCollectionRef, {
-                            ...txn,
-                            createdAt: serverTimestamp() // Add timestamp for sorting
-                        });
-                    });
-                    await Promise.all(addPromises);
-                    console.log("Opening balance data loaded successfully.");
-                } else {
-                    console.log("Database already contains data. Skipping opening balance load.");
-                }
-            } catch (e) {
-                console.error("Error loading initial data:", e);
-            }
-        }
-
-        /* REMOVED reloadSampleData function */
-
-        // --- Real-time Listener ---
-        function listenForTransactions() {
-            if (unsubscribeTransactions) {
-                unsubscribeTransactions(); // Stop previous listener
-            }
-
-            if (!transactionsCollectionRef) return;
-
-            // const q = query(transactionsCollectionRef, orderBy("date", "desc"), orderBy("createdAt", "desc"));
-            // Removed orderBy to prevent Firestore index error. Sorting will be done in JavaScript.
-            const q = query(transactionsCollectionRef);
-
-            unsubscribeTransactions = onSnapshot(q, (snapshot) => {
-                let transactions = [];
-                let totalIncome = 0;
-                let totalExpense = 0;
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    transactions.push({ id: doc.id, ...data });
-
-                    if (data.amount) {
-                        if (data.type === 'income') {
-                            totalIncome += Number(data.amount);
-                        } else if (data.type === 'expense') {
-                            totalExpense += Number(data.amount);
-                        }
-                    }
-                });
-
-                // Sort transactions OLD-to-NEW to calculate running balance
-                transactions.sort((a, b) => {
-                    // 1. Sort by date string ascending
-                    const aDateTime = `${a.date}T${a.time || '00:00'}`;
-                    const bDateTime = `${b.date}T${b.time || '00:00'}`;
-                    
-                    const dateComparison = aDateTime.localeCompare(bDateTime);
-                    if (dateComparison !== 0) {
-                        return dateComparison;
-                    }
-
-                    // 2. If dates/times are equal, sort by createdAt timestamp ascending
-                    const aTime = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
-                    const bTime = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
-                    
-                    return aTime - bTime;
-                });
-
-                // Calculate running balance
-                let runningBalance = 0;
-                transactions.forEach(txn => {
-                    if (txn.type === 'income') {
-                        runningBalance += Number(txn.amount);
-                    } else if (txn.type === 'expense') {
-                        runningBalance -= Number(txn.amount);
-                    }
-                    txn.balance = runningBalance;
-                });
-                
-                // Reverse array to show NEW-to-OLD in the UI
-                transactions.reverse();
-
-                updateTransactionList(transactions);
-                // Update summary with the final totals
-                updateSummary(totalIncome, totalExpense);
-
-            }, (error) => {
-                console.error("Error listening to transactions:", error);
-            });
-        }
-
-        // --- UI Update Functions ---
-        function updateSummary(income, expense) {
-            const balance = income - expense;
-            totalIncomeEl.textContent = formatCurrency(income);
-            totalExpenseEl.textContent = formatCurrency(expense);
-            balanceEl.textContent = formatCurrency(balance);
-
-            // Update balance color
-            balanceEl.classList.toggle('text-green-600', balance >= 0);
-            balanceEl.classList.toggle('text-red-600', balance < 0);
-        }
-
-        function updateTransactionList(transactions) {
-            transactionList.innerHTML = ''; // Clear existing list
-
-            if (transactions.length === 0) {
-                transactionList.innerHTML = `
-                    <tr class="text-center text-gray-500">
-                        <td colspan="7" class="p-4">No transactions found.</td>
-                    </tr>
-                `;
-                return;
-            }
-
-            transactions.forEach(txn => {
-                const tr = document.createElement('tr');
-                tr.className = 'border-b border-gray-200 hover:bg-gray-50';
-                
-                const isIncome = txn.type === 'income';
-                const amountColor = isIncome ? 'text-green-600' : 'text-red-600';
-                const amountPrefix = isIncome ? '+' : '-';
-                
-                let details = txn.description || '';
-                if (txn.party) {
-                    details += ` <span class="text-xs text-gray-500 block">(${txn.party})</span>`;
-                }
-
-                tr.innerHTML = `
-                    <td class="p-3 text-sm text-gray-700 align-top">${formatDate(txn.date, txn.time)}</td>
-                    <td class="p-3 text-sm text-gray-900 align-top">${details}</td>
-                    <td class="p-3 text-sm text-gray-600 align-top">${txn.category || 'Uncategorized'}</td>
-                    <td class="p-3 text-sm text-gray-600 align-top">${txn.mode || 'N/A'}</td>
-                    <td class="p-3 text-sm font-semibold ${amountColor} whitespace-nowrap text-right align-top">${amountPrefix} ${formatCurrency(Math.abs(txn.amount))}</td>
-                    <td class="p-3 text-sm font-medium text-gray-800 whitespace-nowrap text-right align-top">${formatCurrency(txn.balance)}</td>
-                    <td class="p-3 text-sm text-center align-top">
-                        <button data-id="${txn.id}" class="delete-btn text-red-500 hover:text-red-700 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    </td>
-                `;
-                transactionList.appendChild(tr);
-            });
-
-            // Add delete event listeners
-            document.querySelectorAll('.delete-btn').forEach(button => {
-                button.addEventListener('click', () => {
-                    docToDeleteId = button.getAttribute('data-id');
-                    showDeleteModal();
-                });
-            });
-        }
-
-        // --- Event Handlers ---
-        async function handleAddTransaction(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(modalForm);
-            const date = formData.get('date');
-            const time = formData.get('time');
-            const type = modalFormTypeInput.value; // Get type from hidden input
-            const description = formData.get('description');
-            const party = formData.get('party');
-            const category = formData.get('category');
-            const mode = formData.get('mode');
-            const amount = parseFloat(formData.get('amount'));
-
-            if (!date || !time || !type || !description || !amount || amount <= 0) {
-                // Simple validation feedback
-                console.error("Validation failed. Please fill all required fields.");
-                // NOTE: alert() is not allowed in this environment.
-                // Using a more subtle way to show error, like a console log.
-                // A better implementation would be a custom modal.
-                return;
-            }
-
-            try {
-                const newTransaction = {
-                    date,
-                    time,
-                    type,
-                    description,
-                    party,
-                    category,
-                    mode,
-                    amount,
-                    createdAt: serverTimestamp()
-                };
-                
-                await addDoc(transactionsCollectionRef, newTransaction);
-                console.log("Transaction added!");
-                hideTransactionModal();
-
-            } catch (e) {
-                console.error("Error adding transaction:", e);
-            }
-        }
-        
-        // --- Password Handler ---
-        function handlePasswordSubmit(e) {
-            e.preventDefault();
-            const enteredPassword = passwordInput.value;
-            if (enteredPassword === "8113") {
-                passwordModal.classList.add('hidden');
-                loadingSpinner.classList.remove('hidden');
-                initFirebase();
-            } else {
-                passwordError.textContent = "Incorrect Password. Please try again.";
-                passwordError.classList.remove('hidden');
-                passwordInput.value = "";
-                passwordInput.focus();
-            }
-        }
-
-        async function confirmDelete() {
-            if (docToDeleteId) {
-                try {
-                    await deleteDoc(doc(db, transactionsCollectionRef.path, docToDeleteId));
-                    console.log("Document deleted");
-                } catch (e) {
-                    console.error("Error deleting document:", e);
-                }
-            }
-            hideDeleteModal(); // Hide modal after action completes
-        }
-
-        function showDeleteModal() {
-            deleteMessage.textContent = `Are you sure you want to delete this transaction? This action cannot be undone.`;
-            deleteModal.classList.remove('hidden');
-        }
-
-        function hideDeleteModal() {
-            docToDeleteId = null;
-            deleteModal.classList.add('hidden');
-        }
-
-        // --- Modal Functions ---
-        function showTransactionModal(type = 'income') {
-            modalForm.reset();
-            // Set date and time to now
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = (now.getMonth() + 1).toString().padStart(2, '0');
-            const day = now.getDate().toString().padStart(2, '0');
-            const hours = now.getHours().toString().padStart(2, '0');
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            
-            modalForm.querySelector('#date').value = `${year}-${month}-${day}`;
-            modalForm.querySelector('#time').value = `${hours}:${minutes}`;
-
-            if (type === 'income') {
-                modalTitle.textContent = 'Add Cash In Entry';
-                modalFormTypeInput.value = 'income';
-                modalTypeToggleIncome.classList.add('bg-green-600', 'text-white');
-                modalTypeToggleIncome.classList.remove('bg-white', 'text-gray-700');
-                modalTypeToggleExpense.classList.add('bg-white', 'text-gray-700');
-                modalTypeToggleExpense.classList.remove('bg-red-600', 'text-white');
-                modalSaveBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'focus:ring-green-500');
-                modalSaveBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-            } else {
-                modalTitle.textContent = 'Add Cash Out Entry';
-                modalFormTypeInput.value = 'expense';
-                modalTypeToggleExpense.classList.add('bg-red-600', 'text-white');
-                modalTypeToggleExpense.classList.remove('bg-white', 'text-gray-700');
-                modalTypeToggleIncome.classList.add('bg-white', 'text-gray-700');
-                modalTypeToggleIncome.classList.remove('bg-green-600', 'text-white');
-                modalSaveBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-                modalSaveBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'focus:ring-green-500');
-            }
-            transactionModal.classList.remove('hidden');
-        }
-
-        function hideTransactionModal() {
-            transactionModal.classList.add('hidden');
-            modalForm.reset();
-        }
-
-        function setupModalToggles() {
-             modalTypeToggleIncome.addEventListener('click', () => showTransactionModal('income'));
-             modalTypeToggleExpense.addEventListener('click', () => showTransactionModal('expense'));
-        }
-
-        // --- DOMContentLoaded ---
-        document.addEventListener('DOMContentLoaded', () => {
-            // Get all DOM elements
-            loadingSpinner = document.getElementById('loadingSpinner');
-            appContent = document.getElementById('appContent');
-            // authStatus = document.getElementById('authStatus'); // Removed
-            // Note: userIdDisplay is fetched in initFirebase, but it's fine
-            totalIncomeEl = document.getElementById('totalIncome');
-            totalExpenseEl = document.getElementById('totalExpense');
-            balanceEl = document.getElementById('balance');
-            transactionList = document.getElementById('transactionList');
-            
-            // Delete Modal
-            deleteModal = document.getElementById('deleteModal');
-            confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-            cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
-            deleteMessage = document.getElementById('deleteMessage');
-
-            // Transaction Modal
-            transactionModal = document.getElementById('transactionModal');
-            modalTitle = document.getElementById('modalTitle');
-            modalForm = document.getElementById('modalForm');
-            modalCancelBtn = document.getElementById('modalCancelBtn');
-            modalSaveBtn = document.getElementById('modalSaveBtn');
-            modalTypeToggleIncome = document.getElementById('modalTypeToggleIncome');
-            modalTypeToggleExpense = document.getElementById('modalTypeToggleExpense');
-            modalFormTypeInput = document.getElementById('modalFormType');
-            
-            // Password Modal
-            passwordModal = document.getElementById('passwordModal');
-            passwordForm = document.getElementById('passwordForm');
-            passwordInput = document.getElementById('passwordInput');
-            passwordError = document.getElementById('passwordError');
-            
-            // "Cash In" / "Cash Out" button listeners
-            document.getElementById('addCashInBtn').addEventListener('click', () => showTransactionModal('income'));
-            document.getElementById('addCashOutBtn').addEventListener('click', () => showTransactionModal('expense'));
-            
-            // Add form submit listener
-            modalForm.addEventListener('submit', handleAddTransaction);
-            
-            // Password listener
-            passwordForm.addEventListener('submit', handlePasswordSubmit);
-
-            // Modal listeners
-            confirmDeleteBtn.addEventListener('click', confirmDelete);
-            cancelDeleteBtn.addEventListener('click', hideDeleteModal);
-            modalCancelBtn.addEventListener('click', hideTransactionModal);
-            setupModalToggles();
-            
-            // Start Firebase *only after* password is correct
-            // initFirebase(); // Removed from here
-        });
-
-    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -566,7 +50,7 @@
                 </div>
                 <p id="passwordError" class="text-sm text-red-600 mt-2 hidden"></p>
                 <div class="mt-6">
-                    <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <button id="passwordSubmitBtn" type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50">
                         Unlock
                     </button>
                 </div>
@@ -828,7 +312,493 @@ V                            </div>
         </div>
     </div>
 
+
+    <!-- Firebase JS SDK -->
+    <!-- SCRIPT MOVED TO HERE, at the end of <body> -->
+    <script type="module">
+        // Import Firebase services
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged,
+            signInWithEmailAndPassword  // <-- IMPORTED NEW FUNCTION
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDocs, 
+            addDoc, 
+            setDoc, 
+            updateDoc, 
+            deleteDoc, 
+            onSnapshot, 
+            collection, 
+            query, 
+            where, 
+            limit,
+            orderBy,
+            serverTimestamp,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        let db, auth, userId, transactionsCollectionRef;
+        let unsubscribeTransactions = null;
+        
+        // --- VERCEL DEPLOYMENT FIX ---
+        // This is your Firebase project configuration
+       const firebaseConfig = {
+          apiKey: "AIzaSyBFwDBqw_h3v2lTvx6vsTExhQU7gRQTUFM",
+          authDomain: "nutryfit-accounts.firebaseapp.com",
+          projectId: "nutryfit-accounts",
+          storageBucket: "nutryfit-accounts.firebasestorage.app",
+          messagingSenderId: "277363176555",
+          appId: "1:277363176555:web:1fdb42d4320fc154e4ad2e",
+          measurementId: "G-3YPPMSETFT"
+        };
+        
+        // --- STEP 3: PASTE YOUR PERMANENT LOGIN HERE ---
+        // Paste the Email and Password you created in the Firebase Authentication "Users" tab.
+        const FIREBASE_USER_EMAIL = "amalpathiriyal@gmail.com";
+        const FIREBASE_USER_PASSWORD = "123456";
+
+
+        // This creates a unique database path for your Vercel app
+        const appId = 'nutryfit-production'; 
+        
+        // --- (Opening Balance Data) ... -->
+        const openingBalanceData = [
+            { date: "2025-09-18", time: "00:00", description: "Total Previous Income (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "income", amount: 218900 },
+            { date: "2025-09-18", time: "00:01", description: "Total Previous Expense (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "expense", amount: 200900 }
+        ];
+
+        // --- (DOM Elements) ... -->
+        let loadingSpinner, appContent, userIdDisplay;
+        let totalIncomeEl, totalExpenseEl, balanceEl;
+        let transactionList;
+        let deleteModal, confirmDeleteBtn, cancelDeleteBtn, deleteMessage;
+        let docToDeleteId = null;
+        let transactionModal, modalTitle, modalForm, modalCancelBtn, modalSaveBtn, modalTypeToggleIncome, modalTypeToggleExpense, modalFormTypeInput;
+        let passwordModal, passwordForm, passwordInput, passwordError, passwordSubmitBtn;
+
+        // --- (Utility Functions) ... -->
+        const formatCurrency = (amount) => {
+            return amount.toLocaleString('en-IN', {
+                style: 'currency',
+                currency: 'INR',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+            }).replace('₹', '₹ '); // Add space
+        };
+
+        const formatDate = (dateString, timeString) => {
+            try {
+                const date = new Date(`${dateString}T${timeString || '00:00:00'}`);
+                const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+                const correctedDate = new Date(date.getTime() + userTimezoneOffset);
+                
+                const datePart = correctedDate.toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric'
+                });
+                const timePart = correctedDate.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                return `<span class="whitespace-nowrap">${datePart}</span> <span class="text-xs text-gray-500 block">${timePart}</span>`;
+            } catch (e) {
+                console.error("Error formatting date:", dateString, e);
+                return dateString;
+            }
+        };
+
+        // --- Firebase Initialization ---
+        async function initFirebase() {
+            try {
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+                    console.error("Firebase config is missing or is still the placeholder!");
+                    loadingSpinner.innerHTML = `<span class="text-xl font-medium text-red-600 text-center p-4">Error: Firebase Configuration is missing.<br>Please update the file.</span>`;
+                    return;
+                }
+                
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug');
+
+                // --- MODIFIED LOGIN LOGIC ---
+                // Set up the listener. This will wait for a user to log in.
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        // --- USER IS LOGGED IN ---
+                        userId = user.uid; // This UID will be the SAME on all devices
+                        console.log("Permanent user authenticated. UserID:", userId);
+                        
+                        document.querySelectorAll('#userIdDisplay').forEach(el => {
+                            el.textContent = "001";
+                        });
+
+                        transactionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/nutryfit_transactions`);
+                        
+                        await loadInitialData();
+                        listenForTransactions();
+
+                        // Show app content
+                        loadingSpinner.classList.add('hidden');
+                        appContent.classList.remove('hidden');
+
+                    } else {
+                        // --- USER IS LOGGED OUT ---
+                        console.log("No user signed in. Waiting for password prompt.");
+                        // If we are logged out, make sure the app is hidden and password modal is shown
+                        loadingSpinner.classList.add('hidden');
+                        appContent.classList.add('hidden');
+                        passwordModal.classList.remove('hidden');
+                    }
+                });
+            } catch (e) {
+                console.error("Error initializing Firebase:", e);
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        // --- (Data Loading) ... -->
+        async function loadInitialData() {
+            if (!transactionsCollectionRef) return;
+            try {
+                const q = query(transactionsCollectionRef, limit(1));
+                const snapshot = await getDocs(q);
+                
+                if (snapshot.empty) {
+                    console.log("Database is empty. Loading opening balance data...");
+                    const addPromises = openingBalanceData.map(txn => {
+                        return addDoc(transactionsCollectionRef, {
+                            ...txn,
+                            createdAt: serverTimestamp()
+                        });
+                    });
+                    await Promise.all(addPromises);
+                    console.log("Opening balance data loaded successfully.");
+                } else {
+                    console.log("Database already contains data. Skipping opening balance load.");
+                }
+            } catch (e) {
+                console.error("Error loading initial data:", e);
+            }
+        }
+
+        // --- (Real-time Listener) ... -->
+        function listenForTransactions() {
+            if (unsubscribeTransactions) {
+                unsubscribeTransactions();
+            }
+            if (!transactionsCollectionRef) return;
+
+            const q = query(transactionsCollectionRef);
+
+            unsubscribeTransactions = onSnapshot(q, (snapshot) => {
+                let transactions = [];
+                let totalIncome = 0;
+                let totalExpense = 0;
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    transactions.push({ id: doc.id, ...data });
+                    if (data.amount) {
+                        if (data.type === 'income') {
+                            totalIncome += Number(data.amount);
+                        } else if (data.type === 'expense') {
+                            totalExpense += Number(data.amount);
+                        }
+                    }
+                });
+
+                transactions.sort((a, b) => {
+                    const aDateTime = `${a.date}T${a.time || '00:00'}`;
+                    const bDateTime = `${b.date}T${b.time || '00:00'}`;
+                    const dateComparison = aDateTime.localeCompare(bDateTime);
+                    if (dateComparison !== 0) return dateComparison;
+                    const aTime = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+                    const bTime = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+                    return aTime - bTime;
+                });
+
+                let runningBalance = 0;
+                transactions.forEach(txn => {
+                    if (txn.type === 'income') {
+                        runningBalance += Number(txn.amount);
+                    } else if (txn.type === 'expense') {
+                        runningBalance -= Number(txn.amount);
+                    }
+                    txn.balance = runningBalance;
+                });
+                
+                transactions.reverse();
+                updateTransactionList(transactions);
+                updateSummary(totalIncome, totalExpense);
+
+            }, (error) => {
+                console.error("Error listening to transactions:", error);
+            });
+        }
+
+        // --- (UI Update Functions) ... -->
+        function updateSummary(income, expense) {
+            const balance = income - expense;
+            totalIncomeEl.textContent = formatCurrency(income);
+            totalExpenseEl.textContent = formatCurrency(expense);
+            balanceEl.textContent = formatCurrency(balance);
+            balanceEl.classList.toggle('text-green-600', balance >= 0);
+            balanceEl.classList.toggle('text-red-600', balance < 0);
+        }
+
+        function updateTransactionList(transactions) {
+            transactionList.innerHTML = ''; 
+            if (transactions.length === 0) {
+                transactionList.innerHTML = `
+                    <tr class="text-center text-gray-500">
+                        <td colspan="7" class="p-4">No transactions found.</td>
+                    </tr>`;
+                return;
+            }
+            transactions.forEach(txn => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-gray-200 hover:bg-gray-50';
+                const isIncome = txn.type === 'income';
+                const amountColor = isIncome ? 'text-green-600' : 'text-red-600';
+                const amountPrefix = isIncome ? '+' : '-';
+                let details = txn.description || '';
+                if (txn.party) {
+                    details += ` <span class="text-xs text-gray-500 block">(${txn.party})</span>`;
+                }
+                tr.innerHTML = `
+                    <td class="p-3 text-sm text-gray-700 align-top">${formatDate(txn.date, txn.time)}</td>
+                    <td class="p-3 text-sm text-gray-900 align-top">${details}</td>
+                    <td class="p-3 text-sm text-gray-600 align-top">${txn.category || 'Uncategorized'}</td>
+                    <td class="p-3 text-sm text-gray-600 align-top">${txn.mode || 'N/A'}</td>
+                    <td class="p-3 text-sm font-semibold ${amountColor} whitespace-nowrap text-right align-top">${amountPrefix} ${formatCurrency(Math.abs(txn.amount))}</td>
+                    <td class="p-3 text-sm font-medium text-gray-800 whitespace-nowrap text-right align-top">${formatCurrency(txn.balance)}</td>
+                    <td class="p-3 text-sm text-center align-top">
+                        <button data-id="${txn.id}" class="delete-btn text-red-500 hover:text-red-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </td>
+                `;
+                transactionList.appendChild(tr);
+            });
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    docToDeleteId = button.getAttribute('data-id');
+                    showDeleteModal();
+                });
+            });
+        }
+
+        // --- (Event Handlers) ... -->
+        async function handleAddTransaction(e) {
+            e.preventDefault();
+            const formData = new FormData(modalForm);
+            const date = formData.get('date');
+            const time = formData.get('time');
+            const type = modalFormTypeInput.value;
+            const description = formData.get('description');
+            const party = formData.get('party');
+            const category = formData.get('category');
+            const mode = formData.get('mode');
+            const amount = parseFloat(formData.get('amount'));
+            if (!date || !time || !type || !description || !amount || amount <= 0) {
+                console.error("Validation failed. Please fill all required fields.");
+                return;
+            }
+            try {
+                const newTransaction = {
+                    date, time, type, description, party, category, mode, amount,
+                    createdAt: serverTimestamp()
+                };
+                await addDoc(transactionsCollectionRef, newTransaction);
+                console.log("Transaction added!");
+                hideTransactionModal();
+            } catch (e) {
+                console.error("Error adding transaction:", e);
+            }
+        }
+        
+        // --- MODIFIED PASSWORD HANDLER ---
+        async function handlePasswordSubmit(e) {
+            e.preventDefault();
+            const enteredPassword = passwordInput.value;
+            
+            if (enteredPassword !== "8113") {
+                passwordError.textContent = "Incorrect Access Code. Please try again.";
+                passwordError.classList.remove('hidden');
+                passwordInput.value = "";
+                passwordInput.focus();
+                return;
+            }
+
+            if (FIREBASE_USER_EMAIL === "PASTE_YOUR_EMAIL_HERE" || FIREBASE_USER_PASSWORD === "PASTE_YOUR_PASSWORD_HERE") {
+                passwordError.textContent = "Error: Firebase login is not configured in the code.";
+                passwordError.classList.remove('hidden');
+                return;
+            }
+
+            // Access code is correct, now try to log into Firebase
+            passwordError.classList.add('hidden');
+            passwordSubmitBtn.disabled = true;
+            passwordSubmitBtn.textContent = "Logging in...";
+            
+            try {
+                // --- This is the new login step ---
+                await signInWithEmailAndPassword(auth, FIREBASE_USER_EMAIL, FIREBASE_USER_PASSWORD);
+                // Success!
+                // The onAuthStateChanged listener will now take over.
+                console.log("Firebase login successful.");
+                passwordModal.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+
+            } catch (error) {
+                // This catch handles errors from signInWithEmailAndPassword
+                console.error("Firebase Login Error:", error.code, error.message);
+                if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+                    passwordError.textContent = "Firebase login failed. Check email/password in the code.";
+                } else if (error.code === 'auth/invalid-email') {
+                    passwordError.textContent = "Firebase email in code is invalid.";
+                } else {
+                    passwordError.textContent = "An error occurred during login.";
+                }
+                passwordError.classList.remove('hidden');
+                passwordSubmitBtn.disabled = false;
+                passwordSubmitBtn.textContent = "Unlock";
+            }
+        }
+
+        async function confirmDelete() {
+            if (docToDeleteId) {
+                try {
+                    await deleteDoc(doc(db, transactionsCollectionRef.path, docToDeleteId));
+                    console.log("Document deleted");
+                } catch (e) {
+                    console.error("Error deleting document:", e);
+                }
+            }
+            hideDeleteModal();
+        }
+
+        function showDeleteModal() {
+            deleteMessage.textContent = `Are you sure you want to delete this transaction? This action cannot be undone.`;
+            deleteModal.classList.remove('hidden');
+        }
+
+        function hideDeleteModal() {
+            docToDeleteId = null;
+            deleteModal.classList.add('hidden');
+        }
+
+        // --- (Modal Functions) ... -->
+        function showTransactionModal(type = 'income') {
+            modalForm.reset();
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = (now.getMonth() + 1).toString().padStart(2, '0');
+            const day = now.getDate().toString().padStart(2, '0');
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            modalForm.querySelector('#date').value = `${year}-${month}-${day}`;
+            modalForm.querySelector('#time').value = `${hours}:${minutes}`;
+            if (type === 'income') {
+                modalTitle.textContent = 'Add Cash In Entry';
+                modalFormTypeInput.value = 'income';
+                modalTypeToggleIncome.classList.add('bg-green-600', 'text-white');
+                modalTypeToggleIncome.classList.remove('bg-white', 'text-gray-700');
+                modalTypeToggleExpense.classList.add('bg-white', 'text-gray-700');
+                modalTypeToggleExpense.classList.remove('bg-red-600', 'text-white');
+                modalSaveBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'focus:ring-green-500');
+                modalSaveBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
+            } else {
+                modalTitle.textContent = 'Add Cash Out Entry';
+                modalFormTypeInput.value = 'expense';
+                modalTypeToggleExpense.classList.add('bg-red-600', 'text-white');
+                modalTypeToggleExpense.classList.remove('bg-white', 'text-gray-700');
+                modalTypeToggleIncome.classList.add('bg-white', 'text-gray-700');
+                modalTypeToggleIncome.classList.remove('bg-green-600', 'text-white');
+                modalSaveBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
+                modalSaveBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'focus:ring-green-500');
+            }
+            transactionModal.classList.remove('hidden');
+        }
+
+        function hideTransactionModal() {
+            transactionModal.classList.add('hidden');
+            modalForm.reset();
+        }
+
+        function setupModalToggles() {
+             modalTypeToggleIncome.addEventListener('click', () => showTransactionModal('income'));
+             modalTypeToggleExpense.addEventListener('click', () => showTransactionModal('expense'));
+        }
+
+        // --- DOMContentLoaded ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get all DOM elements
+            loadingSpinner = document.getElementById('loadingSpinner');
+            appContent = document.getElementById('appContent');
+            totalIncomeEl = document.getElementById('totalIncome');
+            totalExpenseEl = document.getElementById('totalExpense');
+            balanceEl = document.getElementById('balance');
+            transactionList = document.getElementById('transactionList');
+            
+            // Delete Modal
+            deleteModal = document.getElementById('deleteModal');
+            confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+            deleteMessage = document.getElementById('deleteMessage');
+
+            // Transaction Modal
+            transactionModal = document.getElementById('transactionModal');
+            modalTitle = document.getElementById('modalTitle');
+            modalForm = document.getElementById('modalForm');
+            modalCancelBtn = document.getElementById('modalCancelBtn');
+            modalSaveBtn = document.getElementById('modalSaveBtn');
+            modalTypeToggleIncome = document.getElementById('modalTypeToggleIncome');
+            modalTypeToggleExpense = document.getElementById('modalTypeToggleExpense');
+            modalFormTypeInput = document.getElementById('modalFormType');
+            
+            // Password Modal
+            passwordModal = document.getElementById('passwordModal');
+            passwordForm = document.getElementById('passwordForm');
+            passwordInput = document.getElementById('passwordInput');
+            passwordError = document.getElementById('passwordError');
+            passwordSubmitBtn = document.getElementById('passwordSubmitBtn');
+            
+            // "Cash In" / "Cash Out" button listeners
+            document.getElementById('addCashInBtn').addEventListener('click', () => showTransactionModal('income'));
+            document.getElementById('addCashOutBtn').addEventListener('click', () => showTransactionModal('expense'));
+            
+            // Add form submit listener
+            modalForm.addEventListener('submit', handleAddTransaction);
+            
+            // Password listener
+            passwordForm.addEventListener('submit', handlePasswordSubmit);
+
+            // Modal listeners
+            confirmDeleteBtn.addEventListener('click', confirmDelete);
+            cancelDeleteBtn.addEventListener('click', hideDeleteModal);
+            modalCancelBtn.addEventListener('click', hideTransactionModal);
+            setupModalToggles();
+            
+            // --- MODIFIED ---
+            // Initialize Firebase first.
+            // The onAuthStateChanged listener will handle showing the password modal.
+            initFirebase();
+        });
+
+    </script>
 </body>
 </html>
-
 

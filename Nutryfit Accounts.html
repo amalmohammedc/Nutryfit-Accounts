@@ -419,8 +419,10 @@
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("AIzaSy...")) {
-                    console.error("Firebase config is missing or is still the placeholder!");
+                // --- THIS IS THE FIX ---
+                // Removed the bad validation check that was blocking the app.
+                if (!firebaseConfig.apiKey) { 
+                    console.error("Firebase config is missing!");
                     loadingSpinner.innerHTML = `<span class="text-xl font-medium text-red-600 text-center p-4">Error: Firebase Configuration is missing.<br>Please update the file.</span>`;
                     return;
                 }
@@ -850,6 +852,7 @@
             modalForm.reset();
             editDocIdInput.value = ''; // Clear edit ID on close
         }
+
 
         function setupModalToggles() {
              modalTypeToggleIncome.addEventListener('click', () => {

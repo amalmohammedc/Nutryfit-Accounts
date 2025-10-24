@@ -35,7 +35,7 @@
 <body class="bg-gray-100">
 
     <!-- Password Protection Modal -->
-    <div id="passwordModal" class="fixed z-30 inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75">
+    <div id="passwordModal" class="fixed z-30 inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm mx-4">
             <form id="passwordForm">
                 <div class="flex justify-center mb-4">
@@ -446,6 +446,7 @@
                         // Show the app IMMEDIATELY.
                         loadingSpinner.classList.add('hidden');
                         appContent.classList.remove('hidden');
+                        passwordModal.classList.add('hidden'); // Ensure password modal is hidden
 
                         // Load data in the background
                         await loadInitialData();
@@ -454,9 +455,9 @@
                     } else {
                         // --- USER IS LOGGED OUT ---
                         console.log("No user signed in. Waiting for password prompt.");
-                        loadingSpinner.classList.add('hidden');
-                        appContent.classList.add('hidden');
-                        passwordModal.classList.remove('hidden');
+                        loadingSpinner.classList.add('hidden'); // <-- Hides spinner
+                        appContent.classList.add('hidden');    // <-- Hides app
+                        passwordModal.classList.remove('hidden'); // <-- Shows password modal
                         passwordInput.focus();
                     }
                 });
@@ -710,7 +711,7 @@
             }
         }
         
-        // --- MODIFIED PASSWORD HANDLER ---
+        // --- FINAL PASSWORD HANDLER ---
         async function handlePasswordSubmit(e) {
             e.preventDefault();
             const enteredPassword = passwordInput.value;
@@ -731,6 +732,8 @@
 
             // Access code is correct.
             passwordError.classList.add('hidden');
+            passwordSubmitBtn.disabled = true;
+            passwordSubmitBtn.textContent = "Unlocking...";
 
             // --- NEW LOADING FLOW ---
             // 1. Hide password modal
@@ -753,6 +756,9 @@
                 loadingSpinner.classList.add('hidden');
                 // 2. Show the password modal again
                 passwordModal.classList.remove('hidden');
+                passwordError.classList.remove('hidden');
+                passwordSubmitBtn.disabled = false;
+                passwordSubmitBtn.textContent = "Unlock";
 
                 // 3. Show the error message
                 if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
@@ -762,7 +768,6 @@
                 } else {
                     passwordError.textContent = "An error occurred during login.";
                 }
-                passwordError.classList.remove('hidden');
             }
         }
 
@@ -923,5 +928,4 @@
     </script>
 </body>
 </html>
-
 

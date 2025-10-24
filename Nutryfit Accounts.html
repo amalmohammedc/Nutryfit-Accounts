@@ -42,9 +42,28 @@
         let db, auth, userId, transactionsCollectionRef;
         let unsubscribeTransactions = null;
         
-        // Get Firebase config, app ID, and auth token from environment
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // --- VERCEL DEPLOYMENT FIX ---
+        // You MUST replace this placeholder with your actual Firebase config
+        // object to connect to the database on Vercel.
+        // 1. Go to your Firebase project settings.
+        // 2. Find the "SDK setup and configuration" section.
+        // 3. Copy the config object (it looks like { apiKey: "...", ... }).
+        // 4. Paste it here, replacing the comments below.
+       const firebaseConfig = {
+  apiKey: "AIzaSyBFwDBqw_h3v2lTvx6vsTExhQU7gRQTUFM",
+  authDomain: "nutryfit-accounts.firebaseapp.com",
+  projectId: "nutryfit-accounts",
+  storageBucket: "nutryfit-accounts.firebasestorage.app",
+  messagingSenderId: "277363176555",
+  appId: "1:277363176555:web:1fdb42d4320fc154e4ad2e",
+  measurementId: "G-3YPPMSETFT"
+};
+        
+        // This creates a unique database path for your Vercel app,
+        // separating it from your test data.
+        const appId = 'nutryfit-production'; 
+        
+        // This will be null on Vercel, and the app will correctly sign in anonymously.
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         // --- Opening Balance Data from PDF ---
@@ -106,9 +125,12 @@
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                if (!firebaseConfig.apiKey) {
-                    console.error("Firebase config is missing!");
-                    // authStatus.textContent = "Error: Firebase config is missing. Please check console.";
+                // --- VERCEL DEPLOYMENT FIX ---
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+                    console.error("Firebase config is missing or is still the placeholder!");
+                    console.error("Please update the 'firebaseConfig' object in the HTML file with your project's config.");
+                    // Show a user-facing error
+                    loadingSpinner.innerHTML = `<span class="text-xl font-medium text-red-600 text-center p-4">Error: Firebase Configuration is missing.<br>Please update the file.</span>`;
                     return;
                 }
                 
@@ -808,4 +830,5 @@ V                            </div>
 
 </body>
 </html>
+
 

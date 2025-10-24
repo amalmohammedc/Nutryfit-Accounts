@@ -57,7 +57,7 @@
     </div>
 
     <!-- Loading Spinner -->
-    <div id="loadingSpinner" class="flex items-center justify-center min-h-screen hidden">
+    <div id="loadingSpinner" class="flex items-center justify-center min-h-screen">
         <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -729,22 +729,32 @@
                 return;
             }
 
-            // Access code is correct, now try to log into Firebase
+            // Access code is correct.
             passwordError.classList.add('hidden');
-            passwordSubmitBtn.disabled = true;
-            passwordSubmitBtn.textContent = "Logging in...";
+
+            // --- NEW LOADING FLOW ---
+            // 1. Hide password modal
+            passwordModal.classList.add('hidden');
+            // 2. Show the main loading spinner
+            loadingSpinner.classList.remove('hidden'); 
             
             try {
-                // --- This is the new login step ---
+                // 3. Try to log in.
                 await signInWithEmailAndPassword(auth, FIREBASE_USER_EMAIL, FIREBASE_USER_PASSWORD);
                 // Success!
                 // The onAuthStateChanged listener will now take over.
+                // It will hide the spinner and show the app.
                 console.log("Firebase login successful.");
-                // We no longer hide passwordModal/show spinner here.
-                // onAuthStateChanged will handle it.
             } catch (error) {
-                // This catch handles errors from signInWithEmailAndPassword
+                // --- ERROR HANDLING ---
                 console.error("Firebase Login Error:", error.code, error.message);
+                
+                // 1. Hide the spinner again
+                loadingSpinner.classList.add('hidden');
+                // 2. Show the password modal again
+                passwordModal.classList.remove('hidden');
+
+                // 3. Show the error message
                 if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
                     passwordError.textContent = "Firebase login failed. Check email/password in the code.";
                 } else if (error.code === 'auth/invalid-email') {
@@ -753,8 +763,6 @@
                     passwordError.textContent = "An error occurred during login.";
                 }
                 passwordError.classList.remove('hidden');
-                passwordSubmitBtn.disabled = false;
-                passwordSubmitBtn.textContent = "Unlock";
             }
         }
 
@@ -915,4 +923,5 @@
     </script>
 </body>
 </html>
+
 

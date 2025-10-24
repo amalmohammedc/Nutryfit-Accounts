@@ -11,8 +11,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- SCRIPT MOVED FROM HERE -->
-
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -96,7 +94,7 @@
             <section class="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
                 <!-- Search -->
                 <div class="relative w-full sm:max-w-sm">
-                    <input type="text" placeholder="Search by remark or amount..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <input type="text" id="searchInput" placeholder="Search by remark or amount..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                     <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                     </svg>
@@ -145,7 +143,7 @@
                 <!-- Responsive Header for Transaction List -->
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 sm:p-6 border-b border-gray-200">
                     <h2 class="text-xl font-semibold text-gray-800">Transaction History</h2>
-                    <span class="text-sm text-gray-500 mt-1 sm:mt-0">Showing all entries</span>
+                    <span id="entryCount" class="text-sm text-gray-500 mt-1 sm:mt-0">Showing all entries</span>
                 </div>
                 <!-- Added responsive container for table -->
                 <div class="overflow-x-auto max-h-[60vh] custom-scrollbar">
@@ -183,6 +181,7 @@
             <!-- Modal panel -->
             <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
                 <form id="modalForm">
+                    <input type="hidden" id="editDocId" name="editDocId">
                     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                         <div class="sm:flex sm:items-start">
                             <div class="w-full mt-3 text-center sm:mt-0 sm:text-left">
@@ -244,7 +243,7 @@
                                             <option value="Website">
                                             <option value="Print">
                                             <option value="Sponsorship">
-                                            <option value="Starting Balance">
+                                            <option value="Opening Balance">
                                         </datalist>
                                     </div>
 
@@ -259,6 +258,7 @@
                                             <option>FedMobile</option>
                                             <option>Online</option>
                                             <option>Other</option>
+                                            <option>N/A</option>
                                         </select>
                                     </div>
                                 </div>
@@ -296,7 +296,7 @@
                             <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Delete Transaction</h3>
                             <div class="mt-2">
                                 <p id="deleteMessage" class="text-sm text-gray-500">Are you sure you want to delete this transaction? This action cannot be undone.</p>
-V                            </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -314,16 +314,13 @@ V                            </div>
 
 
     <!-- Firebase JS SDK -->
-    <!-- SCRIPT MOVED TO HERE, at the end of <body> -->
     <script type="module">
         // Import Firebase services
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
             getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-            onAuthStateChanged,
-            signInWithEmailAndPassword  // <-- IMPORTED NEW FUNCTION
+            signInWithEmailAndPassword,
+            onAuthStateChanged
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
@@ -346,6 +343,7 @@ V                            </div>
         // --- Firebase Configuration ---
         let db, auth, userId, transactionsCollectionRef;
         let unsubscribeTransactions = null;
+        let allTransactions = []; // Store all transactions for filtering
         
         // --- VERCEL DEPLOYMENT FIX ---
         // This is your Firebase project configuration
@@ -368,22 +366,22 @@ V                            </div>
         // This creates a unique database path for your Vercel app
         const appId = 'nutryfit-production'; 
         
-        // --- (Opening Balance Data) ... -->
+        // --- Opening Balance Data ---
         const openingBalanceData = [
             { date: "2025-09-18", time: "00:00", description: "Total Previous Income (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "income", amount: 218900 },
             { date: "2025-09-18", time: "00:01", description: "Total Previous Expense (Brought Forward)", party: "Nutryfit History", category: "Opening Balance", mode: "N/A", type: "expense", amount: 200900 }
         ];
 
-        // --- (DOM Elements) ... -->
+        // --- DOM Elements ---
         let loadingSpinner, appContent, userIdDisplay;
         let totalIncomeEl, totalExpenseEl, balanceEl;
-        let transactionList;
+        let transactionList, entryCount, searchInput;
         let deleteModal, confirmDeleteBtn, cancelDeleteBtn, deleteMessage;
         let docToDeleteId = null;
-        let transactionModal, modalTitle, modalForm, modalCancelBtn, modalSaveBtn, modalTypeToggleIncome, modalTypeToggleExpense, modalFormTypeInput;
+        let transactionModal, modalTitle, modalForm, modalCancelBtn, modalSaveBtn, modalTypeToggleIncome, modalTypeToggleExpense, modalFormTypeInput, editDocIdInput;
         let passwordModal, passwordForm, passwordInput, passwordError, passwordSubmitBtn;
 
-        // --- (Utility Functions) ... -->
+        // --- Utility Functions ---
         const formatCurrency = (amount) => {
             return amount.toLocaleString('en-IN', {
                 style: 'currency',
@@ -396,10 +394,11 @@ V                            </div>
         const formatDate = (dateString, timeString) => {
             try {
                 const date = new Date(`${dateString}T${timeString || '00:00:00'}`);
+                // Add time zone offset to prevent date from shifting
                 const userTimezoneOffset = date.getTimezoneOffset() * 60000;
                 const correctedDate = new Date(date.getTime() + userTimezoneOffset);
                 
-                const datePart = correctedDate.toLocaleString('en-GB', {
+                const datePart = correctedDate.toLocaleDateString('en-GB', {
                     day: '2-digit',
                     month: 'short',
                     year: 'numeric'
@@ -409,6 +408,7 @@ V                            </div>
                     minute: '2-digit',
                     hour12: true
                 });
+                // On small screens, don't add the block element
                 return `<span class="whitespace-nowrap">${datePart}</span> <span class="text-xs text-gray-500 block">${timePart}</span>`;
             } catch (e) {
                 console.error("Error formatting date:", dateString, e);
@@ -419,7 +419,7 @@ V                            </div>
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("AIzaSy...")) {
                     console.error("Firebase config is missing or is still the placeholder!");
                     loadingSpinner.innerHTML = `<span class="text-xl font-medium text-red-600 text-center p-4">Error: Firebase Configuration is missing.<br>Please update the file.</span>`;
                     return;
@@ -430,12 +430,10 @@ V                            </div>
                 db = getFirestore(app);
                 setLogLevel('Debug');
 
-                // --- MODIFIED LOGIN LOGIC ---
-                // Set up the listener. This will wait for a user to log in.
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         // --- USER IS LOGGED IN ---
-                        userId = user.uid; // This UID will be the SAME on all devices
+                        userId = user.uid;
                         console.log("Permanent user authenticated. UserID:", userId);
                         
                         document.querySelectorAll('#userIdDisplay').forEach(el => {
@@ -444,20 +442,22 @@ V                            </div>
 
                         transactionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/nutryfit_transactions`);
                         
-                        await loadInitialData();
-                        listenForTransactions();
-
-                        // Show app content
+                        // --- LOADING SPINNER FIX ---
+                        // Show the app IMMEDIATELY.
                         loadingSpinner.classList.add('hidden');
                         appContent.classList.remove('hidden');
+
+                        // Load data in the background
+                        await loadInitialData();
+                        listenForTransactions();
 
                     } else {
                         // --- USER IS LOGGED OUT ---
                         console.log("No user signed in. Waiting for password prompt.");
-                        // If we are logged out, make sure the app is hidden and password modal is shown
                         loadingSpinner.classList.add('hidden');
                         appContent.classList.add('hidden');
                         passwordModal.classList.remove('hidden');
+                        passwordInput.focus();
                     }
                 });
             } catch (e) {
@@ -466,7 +466,7 @@ V                            </div>
             }
         }
 
-        // --- (Data Loading) ... -->
+        // --- Data Loading ---
         async function loadInitialData() {
             if (!transactionsCollectionRef) return;
             try {
@@ -491,7 +491,7 @@ V                            </div>
             }
         }
 
-        // --- (Real-time Listener) ... -->
+        // --- Real-time Listener ---
         function listenForTransactions() {
             if (unsubscribeTransactions) {
                 unsubscribeTransactions();
@@ -517,6 +517,7 @@ V                            </div>
                     }
                 });
 
+                // Sort transactions OLD-to-NEW to calculate running balance
                 transactions.sort((a, b) => {
                     const aDateTime = `${a.date}T${a.time || '00:00'}`;
                     const bDateTime = `${b.date}T${b.time || '00:00'}`;
@@ -527,6 +528,7 @@ V                            </div>
                     return aTime - bTime;
                 });
 
+                // Calculate running balance
                 let runningBalance = 0;
                 transactions.forEach(txn => {
                     if (txn.type === 'income') {
@@ -537,16 +539,47 @@ V                            </div>
                     txn.balance = runningBalance;
                 });
                 
+                // Reverse array to show NEW-to-OLD in the UI
                 transactions.reverse();
-                updateTransactionList(transactions);
+                
+                allTransactions = transactions; // Save for filtering
+                
+                // Apply search filter if any
+                const searchTerm = searchInput.value;
+                const filteredTransactions = filterTransactions(searchTerm);
+
+                updateTransactionList(filteredTransactions);
                 updateSummary(totalIncome, totalExpense);
 
             }, (error) => {
                 console.error("Error listening to transactions:", error);
             });
         }
+        
+        // --- Search Function ---
+        function filterTransactions(searchTerm) {
+             const lowerCaseTerm = searchTerm.toLowerCase();
+             if (!lowerCaseTerm) {
+                return allTransactions; // Return all if search is empty
+             }
+             
+             return allTransactions.filter(txn => {
+                const descriptionMatch = txn.description?.toLowerCase().includes(lowerCaseTerm);
+                const partyMatch = txn.party?.toLowerCase().includes(lowerCaseTerm);
+                const amountMatch = txn.amount?.toString().includes(lowerCaseTerm);
+                const categoryMatch = txn.category?.toLowerCase().includes(lowerCaseTerm);
+                
+                return descriptionMatch || partyMatch || amountMatch || categoryMatch;
+             });
+        }
+        
+        function handleSearchInput(e) {
+            const searchTerm = e.target.value;
+            const filteredTransactions = filterTransactions(searchTerm);
+            updateTransactionList(filteredTransactions);
+        }
 
-        // --- (UI Update Functions) ... -->
+        // --- UI Update Functions ---
         function updateSummary(income, expense) {
             const balance = income - expense;
             totalIncomeEl.textContent = formatCurrency(income);
@@ -557,7 +590,10 @@ V                            </div>
         }
 
         function updateTransactionList(transactions) {
-            transactionList.innerHTML = ''; 
+            transactionList.innerHTML = ''; // Clear existing list
+            
+            entryCount.textContent = `Showing ${transactions.length} of ${allTransactions.length} entries`;
+
             if (transactions.length === 0) {
                 transactionList.innerHTML = `
                     <tr class="text-center text-gray-500">
@@ -565,16 +601,20 @@ V                            </div>
                     </tr>`;
                 return;
             }
+
             transactions.forEach(txn => {
                 const tr = document.createElement('tr');
                 tr.className = 'border-b border-gray-200 hover:bg-gray-50';
+                
                 const isIncome = txn.type === 'income';
                 const amountColor = isIncome ? 'text-green-600' : 'text-red-600';
                 const amountPrefix = isIncome ? '+' : '-';
+                
                 let details = txn.description || '';
                 if (txn.party) {
                     details += ` <span class="text-xs text-gray-500 block">(${txn.party})</span>`;
                 }
+
                 tr.innerHTML = `
                     <td class="p-3 text-sm text-gray-700 align-top">${formatDate(txn.date, txn.time)}</td>
                     <td class="p-3 text-sm text-gray-900 align-top">${details}</td>
@@ -583,8 +623,13 @@ V                            </div>
                     <td class="p-3 text-sm font-semibold ${amountColor} whitespace-nowrap text-right align-top">${amountPrefix} ${formatCurrency(Math.abs(txn.amount))}</td>
                     <td class="p-3 text-sm font-medium text-gray-800 whitespace-nowrap text-right align-top">${formatCurrency(txn.balance)}</td>
                     <td class="p-3 text-sm text-center align-top">
-                        <button data-id="${txn.id}" class="delete-btn text-red-500 hover:text-red-700 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <button data-id="${txn.id}" class="edit-btn text-blue-500 hover:text-blue-700 transition-colors p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </button>
+                        <button data-id="${txn.id}" class="delete-btn text-red-500 hover:text-red-700 transition-colors p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                         </button>
@@ -592,40 +637,76 @@ V                            </div>
                 `;
                 transactionList.appendChild(tr);
             });
+
+            // Add delete event listeners
             document.querySelectorAll('.delete-btn').forEach(button => {
-                button.addEventListener('click', () => {
-                    docToDeleteId = button.getAttribute('data-id');
+                button.addEventListener('click', (e) => {
+                    docToDeleteId = e.currentTarget.getAttribute('data-id');
                     showDeleteModal();
+                });
+            });
+            
+            // Add edit event listeners
+            document.querySelectorAll('.edit-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const docId = e.currentTarget.getAttribute('data-id');
+                    const txnToEdit = allTransactions.find(t => t.id === docId);
+                    if (txnToEdit) {
+                        showTransactionModal(txnToEdit.type, txnToEdit);
+                    }
                 });
             });
         }
 
-        // --- (Event Handlers) ... -->
-        async function handleAddTransaction(e) {
+        // --- Event Handlers ---
+        async function handleTransactionSubmit(e) {
             e.preventDefault();
+            
             const formData = new FormData(modalForm);
             const date = formData.get('date');
             const time = formData.get('time');
-            const type = modalFormTypeInput.value;
+            const type = modalFormTypeInput.value; // Get type from hidden input
             const description = formData.get('description');
             const party = formData.get('party');
             const category = formData.get('category');
             const mode = formData.get('mode');
             const amount = parseFloat(formData.get('amount'));
+            const docId = editDocIdInput.value;
+
             if (!date || !time || !type || !description || !amount || amount <= 0) {
                 console.error("Validation failed. Please fill all required fields.");
                 return;
             }
+
             try {
-                const newTransaction = {
-                    date, time, type, description, party, category, mode, amount,
-                    createdAt: serverTimestamp()
+                const transactionData = {
+                    date,
+                    time,
+                    type,
+                    description,
+                    party,
+                    category,
+                    mode,
+                    amount,
+                    // We don't update createdAt, it stays original
                 };
-                await addDoc(transactionsCollectionRef, newTransaction);
-                console.log("Transaction added!");
+                
+                if (docId) {
+                    // Update existing document
+                    const docRef = doc(db, transactionsCollectionRef.path, docId);
+                    await updateDoc(docRef, transactionData);
+                    console.log("Transaction updated!");
+                } else {
+                    // Add new document
+                    transactionData.createdAt = serverTimestamp(); // Set createdAt only for new docs
+                    await addDoc(transactionsCollectionRef, transactionData);
+                    console.log("Transaction added!");
+                }
+                
                 hideTransactionModal();
+
             } catch (e) {
-                console.error("Error adding transaction:", e);
+                console.error("Error saving transaction:", e);
             }
         }
         
@@ -659,9 +740,8 @@ V                            </div>
                 // Success!
                 // The onAuthStateChanged listener will now take over.
                 console.log("Firebase login successful.");
-                passwordModal.classList.add('hidden');
-                loadingSpinner.classList.remove('hidden');
-
+                // We no longer hide passwordModal/show spinner here.
+                // onAuthStateChanged will handle it.
             } catch (error) {
                 // This catch handles errors from signInWithEmailAndPassword
                 console.error("Firebase Login Error:", error.code, error.message);
@@ -700,19 +780,39 @@ V                            </div>
             deleteModal.classList.add('hidden');
         }
 
-        // --- (Modal Functions) ... -->
-        function showTransactionModal(type = 'income') {
+        // --- Modal Functions ---
+        function showTransactionModal(type = 'income', docToEdit = null) {
             modalForm.reset();
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = (now.getMonth() + 1).toString().padStart(2, '0');
-            const day = now.getDate().toString().padStart(2, '0');
-            const hours = now.getHours().toString().padStart(2, '0');
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            modalForm.querySelector('#date').value = `${year}-${month}-${day}`;
-            modalForm.querySelector('#time').value = `${hours}:${minutes}`;
+            
+            if (docToEdit) {
+                // --- EDIT MODE ---
+                modalTitle.textContent = `Edit ${type === 'income' ? 'Cash In' : 'Cash Out'} Entry`;
+                editDocIdInput.value = docToEdit.id;
+                modalForm.querySelector('#date').value = docToEdit.date;
+                modalForm.querySelector('#time').value = docToEdit.time;
+                modalForm.querySelector('#amount').value = docToEdit.amount;
+                modalForm.querySelector('#description').value = docToEdit.description;
+                modalForm.querySelector('#party').value = docToEdit.party || '';
+                modalForm.querySelector('#category').value = docToEdit.category || '';
+                modalForm.querySelector('#mode').value = docToEdit.mode || 'Google Pay';
+            } else {
+                // --- ADD NEW MODE ---
+                modalTitle.textContent = `Add ${type === 'income' ? 'Cash In' : 'Cash Out'} Entry`;
+                editDocIdInput.value = ''; // Clear edit ID
+                // Set date and time to now
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                const day = now.getDate().toString().padStart(2, '0');
+                const hours = now.getHours().toString().padStart(2, '0');
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                
+                modalForm.querySelector('#date').value = `${year}-${month}-${day}`;
+                modalForm.querySelector('#time').value = `${hours}:${minutes}`;
+            }
+
+            // Set toggles and button colors
             if (type === 'income') {
-                modalTitle.textContent = 'Add Cash In Entry';
                 modalFormTypeInput.value = 'income';
                 modalTypeToggleIncome.classList.add('bg-green-600', 'text-white');
                 modalTypeToggleIncome.classList.remove('bg-white', 'text-gray-700');
@@ -721,7 +821,6 @@ V                            </div>
                 modalSaveBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'focus:ring-green-500');
                 modalSaveBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
             } else {
-                modalTitle.textContent = 'Add Cash Out Entry';
                 modalFormTypeInput.value = 'expense';
                 modalTypeToggleExpense.classList.add('bg-red-600', 'text-white');
                 modalTypeToggleExpense.classList.remove('bg-white', 'text-gray-700');
@@ -736,11 +835,21 @@ V                            </div>
         function hideTransactionModal() {
             transactionModal.classList.add('hidden');
             modalForm.reset();
+            editDocIdInput.value = ''; // Clear edit ID on close
         }
 
         function setupModalToggles() {
-             modalTypeToggleIncome.addEventListener('click', () => showTransactionModal('income'));
-             modalTypeToggleExpense.addEventListener('click', () => showTransactionModal('expense'));
+             modalTypeToggleIncome.addEventListener('click', () => {
+                const docId = editDocIdInput.value;
+                const docToEdit = docId ? allTransactions.find(t => t.id === docId) : null;
+                // Pass docToEdit if it exists, otherwise null
+                showTransactionModal('income', docToEdit);
+             });
+             modalTypeToggleExpense.addEventListener('click', () => {
+                const docId = editDocIdInput.value;
+                const docToEdit = docId ? allTransactions.find(t => t.id === docId) : null;
+                showTransactionModal('expense', docToEdit);
+             });
         }
 
         // --- DOMContentLoaded ---
@@ -752,6 +861,8 @@ V                            </div>
             totalExpenseEl = document.getElementById('totalExpense');
             balanceEl = document.getElementById('balance');
             transactionList = document.getElementById('transactionList');
+            entryCount = document.getElementById('entryCount');
+            searchInput = document.getElementById('searchInput');
             
             // Delete Modal
             deleteModal = document.getElementById('deleteModal');
@@ -768,6 +879,7 @@ V                            </div>
             modalTypeToggleIncome = document.getElementById('modalTypeToggleIncome');
             modalTypeToggleExpense = document.getElementById('modalTypeToggleExpense');
             modalFormTypeInput = document.getElementById('modalFormType');
+            editDocIdInput = document.getElementById('editDocId');
             
             // Password Modal
             passwordModal = document.getElementById('passwordModal');
@@ -777,14 +889,17 @@ V                            </div>
             passwordSubmitBtn = document.getElementById('passwordSubmitBtn');
             
             // "Cash In" / "Cash Out" button listeners
-            document.getElementById('addCashInBtn').addEventListener('click', () => showTransactionModal('income'));
-            document.getElementById('addCashOutBtn').addEventListener('click', () => showTransactionModal('expense'));
+            document.getElementById('addCashInBtn').addEventListener('click', () => showTransactionModal('income', null));
+            document.getElementById('addCashOutBtn').addEventListener('click', () => showTransactionModal('expense', null));
             
             // Add form submit listener
-            modalForm.addEventListener('submit', handleAddTransaction);
+            modalForm.addEventListener('submit', handleTransactionSubmit);
             
             // Password listener
             passwordForm.addEventListener('submit', handlePasswordSubmit);
+            
+            // Search listener
+            searchInput.addEventListener('input', handleSearchInput);
 
             // Modal listeners
             confirmDeleteBtn.addEventListener('click', confirmDelete);
@@ -792,8 +907,7 @@ V                            </div>
             modalCancelBtn.addEventListener('click', hideTransactionModal);
             setupModalToggles();
             
-            // --- MODIFIED ---
-            // Initialize Firebase first.
+            // Initialize Firebase.
             // The onAuthStateChanged listener will handle showing the password modal.
             initFirebase();
         });
